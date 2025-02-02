@@ -2,15 +2,21 @@ import path from "node:path";
 import fs from "node:fs";
 import http from "node:http";
 
+/**
+ * Types
+ */
+type Response = http.ServerResponse<http.IncomingMessage> & { req: http.IncomingMessage };
+type Request = http.IncomingMessage;
+
+/**
+ * Constants
+ */
 const PORT = 5000;
 const HOST_NAME = "127.0.0.1";
 
-type Response = http.ServerResponse<http.IncomingMessage> & {
-  req: http.IncomingMessage;
-};
-
-type Request = http.IncomingMessage;
-
+/**
+ * Utils
+ */
 function getTemplate() {
   try {
     const content = fs.readFileSync("index.html", "utf8");
@@ -67,7 +73,7 @@ function handleStatic(req: Request, res: Response) {
   const safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, "");
 
   try {
-    const content = fs.readFileSync(path.join("public", safePath));
+    const content = fs.readFileSync(path.join(".", safePath));
 
     res.writeHead(200, {
       "Content-Type": ext === ".css" ? "text/css" : "text/javascript",
@@ -84,21 +90,6 @@ const server = http.createServer((req, res) => {
   if (handleStatic(req, res)) return;
   const pathname = req.url;
 
-  if (pathname.match(/\.(css|js)$/)) {
-    const filePath = `.${pathname}`;
-    try {
-      const content = fs.readFileSync(filePath);
-      const contentType = pathname.endsWith(".css") ? "text/css" : "text/javascript";
-      res.writeHead(200, { "Content-Type": contentType });
-      res.end(content);
-      return;
-    } catch (err) {
-      res.writeHead(404);
-      res.end("File not found");
-      return;
-    }
-  }
-
   if (pathname === "/") {
     homeController(req, res);
     return;
@@ -114,7 +105,8 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  res.end("NOT FOUND!");
+  res.writeHead(404);
+  res.end();
 });
 
 function homeController(req: Request, res: Response) {

@@ -1,0 +1,30 @@
+<div data-template="true">
+  <!doctype html>
+  <html>
+    <head>
+      <title>{{title}}</title>
+      <link rel="stylesheet" href="/styles.css" />
+    </head>
+    <body>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/login">Login</a>
+        <a href="/register">Register</a>
+      </nav>
+      <main>{{content}}</main>
+      <script src="/app.js"></script>
+    </body>
+  </html>
+</div>
+
+<div data-page="home">
+  <h1>Welcome Home</h1>
+</div>
+
+<div data-page="login">
+  <h1>Login</h1>
+</div>
+
+<div data-page="register">
+  <h1>Register</h1>
+</div>

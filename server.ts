@@ -1,69 +1,90 @@
-import path from "node:path";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
+import path from "node:path";
+import sqlite from "node:sqlite";
+
+import * as t from "./template.ts";
 
 /**
  * Types
  */
+type User = { id: number; username: string };
+type Session = { id: string; expires_at: string; user_id: number };
 type Response = http.ServerResponse<http.IncomingMessage> & { req: http.IncomingMessage };
 type Request = http.IncomingMessage;
+export type Props = {
+  title: string;
+  user: User;
+  session: Session;
+};
+
+declare module "http" {
+  interface ServerResponse {
+    render: <T extends Partial<Pick<Props, "title">>>(name: string, data: T) => void;
+  }
+
+  interface IncomingMessage {
+    params: Record<string, string>;
+    user: User;
+    session: Session;
+    cookies: Record<string, string>;
+  }
+}
 
 /**
  * Constants
  */
 const PORT = 5000;
 const HOST_NAME = "127.0.0.1";
-const HTML_FILE_NAME = "index.html";
 
 /**
- * Globals
+ * Database
  */
-let html: string;
-let template: string;
-let pages: Record<string, string>;
+const db = new sqlite.DatabaseSync("db.sqlite");
+
+const sql = (strings: TemplateStringsArray, ...values: any[]): string => {
+  return String.raw({ raw: strings }, ...values);
+};
+
+db.exec(sql`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT
+  )
+`);
+
+db.exec(sql`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER,
+    expires_at DATETIME,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )
+`);
 
 /**
  * Utils
  */
-async function readHTML() {
-  try {
-    const content = await fs.readFile(HTML_FILE_NAME, "utf8");
-    return content;
-  } catch (error) {
-    console.error("Error parsing template:", error);
-    return "";
-  }
-}
+function render(req: Request, res: Response) {
+  return <T extends Partial<Pick<Props, "title">>>(name: string, data: T) => {
+    const children = t[name];
 
-function getTemplate(content: string = "{{content}}") {
-  const regex = /<div\s+data-template=["']true["']\s*>([\s\S]*?)<\/div>/i;
-  const [_, template] = content.match(regex) ?? [];
+    if (!children) {
+      res.writeHead(404);
+      res.end("Page not found");
+      return;
+    }
 
-  if (!template) {
-    throw new Error('Template not found! Add a div with data-template="true"');
-  }
+    const rendered = t.template({
+      children: children,
+      data: { ...data, title: data?.title ?? "", user: req.user, session: req.session },
+    });
 
-  return template.trim();
-}
-
-function getPages(content: string) {
-  const pages = {};
-  const regex = /<div\s+data-page=["']([^"']+)["'].*?>([\s\S]*?)<\/div>/gi;
-
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(content)) !== null) {
-    const [_, page, content] = match;
-    pages[page] = content.trim();
-  }
-
-  return pages;
-}
-
-function renderTemplate<T>(template: string, data: T) {
-  return template.replace(/\{\{(\s*\w+\s*)\}\}/g, (_match, key) => {
-    const trimmedKey = key.trim();
-    return data[trimmedKey] || "";
-  });
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(rendered);
+  };
 }
 
 async function handleStatic(req: Request, res: Response) {
@@ -133,14 +154,90 @@ function getMimeType(ext: string): string {
 }
 
 /**
+ * Password Utilities
+ */
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password: string, storedHash: string): boolean {
+  const [salt, hash] = storedHash.split(":");
+  const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
+  return hash === verifyHash;
+}
+
+/**
+ * Cookie Parsing
+ */
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+  if (!cookieHeader) return {};
+  return cookieHeader.split(";").reduce(
+    (cookies, cookie) => {
+      const [name, value] = cookie.trim().split("=");
+      cookies[name] = decodeURIComponent(value);
+      return cookies;
+    },
+    {} as Record<string, string>,
+  );
+}
+
+async function attachUser(req: Request, _res: Response) {
+  const session = await getSession(req);
+  if (!session) return;
+
+  const user = await getUserFromSession(session);
+  if (!user) return;
+
+  req.user = user;
+  req.session = session;
+}
+
+/**
+ * Session Management
+ */
+async function getSession(req: Request): Promise<Session | null> {
+  const sessionId = req.cookies.sessionId;
+
+  if (!sessionId) {
+    return null;
+  }
+
+  const session = db
+    .prepare("SELECT * FROM sessions WHERE id = ?")
+    .get(sessionId) as Session | null;
+
+  if (!session) {
+    return null;
+  }
+
+  const expiresAt = new Date(session.expires_at);
+
+  if (expiresAt < new Date()) {
+    db.prepare(sql`DELETE FROM sessions WHERE id = ?`).run(sessionId);
+    return null;
+  }
+
+  return session;
+}
+
+async function getUserFromSession(session: Session): Promise<User | null> {
+  const user = db
+    .prepare(sql`SELECT * FROM users WHERE id = ?`)
+    .get(session.user_id) as User | null;
+  return user;
+}
+
+/**
  * Bootstrap
  */
 async function bootstrap() {
-  html = await readHTML();
-  template = getTemplate(html);
-  pages = getPages(html);
-
   const server = http.createServer(async (req, res) => {
+    req.cookies = parseCookies(req.headers.cookie);
+    await attachUser(req, res);
+    res.render = render(req, res);
+
     if (!req.url) return false;
     if (await handleStatic(req, res)) return;
 
@@ -162,6 +259,11 @@ async function bootstrap() {
       return;
     }
 
+    if (pathname === "/logout") {
+      logoutController(req, res);
+      return;
+    }
+
     res.writeHead(404);
     res.end();
   });
@@ -171,14 +273,14 @@ async function bootstrap() {
   });
 }
 
+/**
+ * Controllers
+ */
 function homeController(req: Request, res: Response) {
   const method = req.method;
 
   if (method === "GET") {
-    const content = pages["home"];
-    const rendered = renderTemplate(template, { title: "Home", content });
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(rendered);
+    res.render("home", { title: "Home Page" });
     return;
   }
 }
@@ -187,15 +289,43 @@ function loginController(req: Request, res: Response) {
   const method = req.method;
 
   if (method === "GET") {
-    const content = pages["login"];
-    const rendered = renderTemplate(template, { title: "Login", content });
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(rendered);
+    res.render("login", { title: "Login Page" });
     return;
   }
 
   if (method === "POST") {
-    res.end("LOGIN!");
+    let body = "";
+    req.on("data", (chunk) => void (body += chunk.toString()));
+    req.on("end", () => {
+      const formData = new URLSearchParams(body);
+      const username = formData.get("username");
+      const password = formData.get("password");
+
+      const user = db.prepare(sql`SELECT * FROM users WHERE username = ?`).get(username) as
+        | (User & { password: string })
+        | null;
+
+      if (!user || !verifyPassword(password!, user.password)) {
+        res.render("login", { title: "Login Page", error: "Invalid username or password" });
+        return;
+      }
+
+      const sessionId = crypto.randomBytes(16).toString("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      db.prepare(sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).run(
+        sessionId,
+        user.id,
+        expiresAt.toISOString(),
+      );
+
+      res.setHeader(
+        "Set-Cookie",
+        `sessionId=${sessionId}; Expires=${expiresAt.toUTCString()}; HttpOnly; Path=/`,
+      );
+      res.writeHead(302, { Location: "/" });
+      res.end();
+    });
     return;
   }
 }
@@ -204,17 +334,62 @@ function registerController(req: Request, res: Response) {
   const method = req.method;
 
   if (method === "GET") {
-    const content = pages["register"];
-    const rendered = renderTemplate(template, { title: "Register", content });
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(rendered);
+    res.render("register", { title: "Register Page" });
     return;
   }
 
   if (method === "POST") {
-    res.end("LOGIN!");
+    let body = "";
+    req.on("data", (chunk) => void (body += chunk.toString()));
+    req.on("end", () => {
+      const formData = new URLSearchParams(body);
+      const username = formData.get("username");
+      const password = formData.get("password");
+      const hashedPassword = hashPassword(password!);
+
+      let userId: number | bigint;
+      try {
+        userId = db
+          .prepare("INSERT INTO users (username, password) VALUES (?, ?)")
+          .run(username, hashedPassword).lastInsertRowid;
+      } catch (error) {
+        res.render("register", { title: "Register Page", error: error.message });
+        return;
+      }
+
+      const sessionId = crypto.randomBytes(16).toString("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      db.prepare(sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).run(
+        sessionId,
+        userId,
+        expiresAt.toISOString(),
+      );
+
+      res.setHeader(
+        "Set-Cookie",
+        `sessionId=${sessionId}; Expires=${expiresAt.toUTCString()}; HttpOnly; Path=/`,
+      );
+      res.writeHead(302, { Location: "/" });
+      res.end();
+    });
     return;
   }
+}
+
+function logoutController(req: Request, res: Response) {
+  const sessionId = req.cookies.sessionId;
+
+  if (sessionId) {
+    db.prepare(sql`DELETE FROM sessions WHERE id = ?`).run(sessionId);
+  }
+
+  res.setHeader(
+    "Set-Cookie",
+    `sessionId=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Path=/`,
+  );
+  res.writeHead(302, { Location: "/" });
+  res.end();
 }
 
 /**

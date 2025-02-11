@@ -114,13 +114,13 @@ async function handleStatic(req: Request, res: Response) {
     res.writeHead(200, { "Content-Type": getMimeType(ext), "Content-Length": content.length });
     res.end(content);
     return true;
-  } catch (err) {
+  } catch (error) {
     return false;
   }
 }
 
 function getMimeType(ext: string): string {
-  const mimeTypes: { [key: string]: string } = {
+  const mimeTypes = {
     ".html": "text/html",
     ".htm": "text/html",
     ".css": "text/css",
@@ -197,6 +197,23 @@ async function attachUser(req: Request, _res: Response) {
 /**
  * Session Management
  */
+function createSession(userId: number | bigint): { sessionId: string; expiresAt: Date } {
+  const sessionId = crypto.randomBytes(16).toString("hex");
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+  db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").run(
+    sessionId,
+    userId,
+    expiresAt.toISOString(),
+  );
+
+  return { sessionId, expiresAt };
+}
+
+function deleteSession(sessionId: string): void {
+  db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+}
+
 async function getSession(req: Request): Promise<Session | null> {
   const sessionId = req.cookies.sessionId;
 
@@ -306,12 +323,15 @@ function loginController(req: Request, res: Response) {
         | null;
 
       if (!user || !verifyPassword(password!, user.password)) {
-        res.render("login", { title: "Login Page", error: "Invalid username or password" });
+        res.render("login", {
+          form: { username, password },
+          title: "Login Page",
+          error: "Invalid username or password",
+        });
         return;
       }
 
-      const sessionId = crypto.randomBytes(16).toString("hex");
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const { sessionId, expiresAt } = createSession(user.id);
 
       db.prepare(sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).run(
         sessionId,
@@ -357,8 +377,7 @@ function registerController(req: Request, res: Response) {
         return;
       }
 
-      const sessionId = crypto.randomBytes(16).toString("hex");
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const { sessionId, expiresAt } = createSession(userId);
 
       db.prepare(sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).run(
         sessionId,
@@ -381,7 +400,7 @@ function logoutController(req: Request, res: Response) {
   const sessionId = req.cookies.sessionId;
 
   if (sessionId) {
-    db.prepare(sql`DELETE FROM sessions WHERE id = ?`).run(sessionId);
+    deleteSession(sessionId);
   }
 
   res.setHeader(

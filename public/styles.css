@@ -5,10 +5,7 @@
 }
 
 html {
-  -moz-text-size-adjust: none;
-  -webkit-text-size-adjust: none;
-  text-size-adjust: none;
-  font-family: system-ui, sans-serif;
+  font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, serif;
   font-weight: normal;
 }
 
@@ -22,7 +19,7 @@ figure,
 blockquote,
 dl,
 dd {
-  margin-block-end: 0;
+  margin-right: 0;
 }
 
 ul[role="list"],
@@ -53,8 +50,7 @@ h4 {
 }
 
 a:not([class]) {
-  text-decoration-skip-ink: auto;
-  color: currentColor;
+  color: currentcolor;
 }
 
 img,
@@ -73,8 +69,4 @@ select {
 
 textarea:not([rows]) {
   min-height: 10em;
-}
-
-:target {
-  scroll-margin-block: 5ex;
 }

@@ -50,10 +50,30 @@ export const home = ({ user }: { user: Props["user"] }) =>
   html`<h1>Welcome Home</h1>
     ${user ? `<p>Hello, ${user.username}!</p>` : `<p>Please log in or register.</p>`}`;
 
-export const login = ({ error }: { error: string }) =>
+export const login = ({
+  form = { password: "", username: "" },
+  error,
+}: {
+  error: string;
+  form?: { username: string; password: string };
+}) =>
   html`<form action="/login" method="post">
-    <input id="username" name="username" type="text" required placeholder="your username" />
-    <input id="password" name="password" type="password" required placeholder="***********" />
+    <input
+      value="${form?.username}"
+      id="username"
+      name="username"
+      type="text"
+      required
+      placeholder="your username"
+    />
+    <input
+      value="${form?.password}"
+      id="password"
+      name="password"
+      type="password"
+      required
+      placeholder="***********"
+    />
     <input type="submit" value="Login" />
     ${error ? `<p class="error">${error}</p>` : ""}
   </form>`;

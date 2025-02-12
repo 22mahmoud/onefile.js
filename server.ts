@@ -201,7 +201,7 @@ function createSession(userId: number | bigint): { sessionId: string; expiresAt:
   const sessionId = crypto.randomBytes(16).toString("hex");
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-  db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").run(
+  db.prepare(sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).run(
     sessionId,
     userId,
     expiresAt.toISOString(),
@@ -333,12 +333,6 @@ function loginController(req: Request, res: Response) {
 
       const { sessionId, expiresAt } = createSession(user.id);
 
-      db.prepare(sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).run(
-        sessionId,
-        user.id,
-        expiresAt.toISOString(),
-      );
-
       res.setHeader(
         "Set-Cookie",
         `sessionId=${sessionId}; Expires=${expiresAt.toUTCString()}; HttpOnly; Path=/`,
@@ -378,12 +372,6 @@ function registerController(req: Request, res: Response) {
       }
 
       const { sessionId, expiresAt } = createSession(userId);
-
-      db.prepare(sql`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).run(
-        sessionId,
-        userId,
-        expiresAt.toISOString(),
-      );
 
       res.setHeader(
         "Set-Cookie",

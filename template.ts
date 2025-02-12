@@ -12,13 +12,13 @@ export const template = <T extends Props>({
   children: (x: T) => string;
 }) =>
   html`<!doctype html>
-    <html>
+    <html lang="en">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${data.title}</title>
         <link rel="stylesheet" href="/styles.css" />
-        <meta name="description" content="" />
+        <meta name="description" content="this is a dummy description" />
 
         <meta property="og:title" content="" />
         <meta property="og:type" content="" />

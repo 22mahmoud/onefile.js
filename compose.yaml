@@ -1,0 +1,14 @@
+services:
+  app:
+    image: onefile_js
+    build: .
+    environment:
+      DB: "/data/db.sqlite"
+    ports:
+      - "5000:5000"
+    volumes:
+      - db:/data
+    restart: unless-stopped
+
+volumes:
+  db:

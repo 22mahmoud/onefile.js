@@ -41,7 +41,8 @@ const HOST_NAME = "127.0.0.1";
 /**
  * Database
  */
-const db = new sqlite.DatabaseSync("db.sqlite");
+console.log("DB", process.env.DB);
+const db = new sqlite.DatabaseSync(process.env.DB ?? "db.sqlite");
 
 const sql = (strings: TemplateStringsArray, ...values: any[]): string => {
   return String.raw({ raw: strings }, ...values);
@@ -251,41 +252,47 @@ async function getUserFromSession(session: Session): Promise<User | null> {
  */
 async function bootstrap() {
   const server = http.createServer(async (req, res) => {
-    req.cookies = parseCookies(req.headers.cookie);
-    await attachUser(req, res);
-    res.render = render(req, res);
+    try {
+      req.cookies = parseCookies(req.headers.cookie);
+      await attachUser(req, res);
+      res.render = render(req, res);
 
-    if (!req.url) return false;
-    if (await handleStatic(req, res)) return;
+      if (!req.url) return false;
+      if (await handleStatic(req, res)) return;
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const pathname = url.pathname;
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const pathname = url.pathname;
 
-    if (pathname === "/") {
-      homeController(req, res);
-      return;
+      if (pathname === "/") {
+        homeController(req, res);
+        return;
+      }
+
+      if (pathname === "/login") {
+        loginController(req, res);
+        return;
+      }
+
+      if (pathname === "/register") {
+        registerController(req, res);
+        return;
+      }
+
+      if (pathname === "/logout") {
+        logoutController(req, res);
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    } catch (error) {
+      console.error(error);
+      res.writeHead(500);
+      res.end;
     }
-
-    if (pathname === "/login") {
-      loginController(req, res);
-      return;
-    }
-
-    if (pathname === "/register") {
-      registerController(req, res);
-      return;
-    }
-
-    if (pathname === "/logout") {
-      logoutController(req, res);
-      return;
-    }
-
-    res.writeHead(404);
-    res.end();
   });
 
-  server.listen(PORT, HOST_NAME, () => {
+  server.listen(PORT, () => {
     console.log(`Server is up & running on http://${HOST_NAME}:${PORT}!!`);
   });
 }

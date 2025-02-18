@@ -59,9 +59,7 @@ export const template = <T extends Props>({
 
 export const home = ({ user }: { user: Props["user"] }) =>
   html`<h1>Welcome Home</h1>
-    <div x-data="{counter: 0}">
-      <button @click="counter++" x-text="counter"></button>
-    </div>
+    <button x-data="{counter: 0}" @click="counter++" x-text="counter">0</button>
     ${user ? `<p>Hello, ${user.username}!</p>` : `<p>Please log in or register.</p>`}`;
 
 export const login = ({

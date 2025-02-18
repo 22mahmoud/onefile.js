@@ -4,6 +4,16 @@ const html = (strings: TemplateStringsArray, ...values: any[]): string => {
   return String.raw({ raw: strings }, ...values);
 };
 
+const nav = ({ user }: { user: any }) => html`
+  <nav>
+    <a href="/">Home</a>
+    ${user
+      ? `<a href="/logout">Logout</a>`
+      : `<a href="/login">Login</a>
+         <a href="/register">Register</a>`}
+  </nav>
+`;
+
 export const template = <T extends Props>({
   children,
   data,
@@ -30,24 +40,28 @@ export const template = <T extends Props>({
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="icon.png" />
 
-        <link rel="manifest" href="site.webmanifest" />
+        <!-- <link rel="manifest" href="site.webmanifest" /> -->
         <meta name="theme-color" content="#fafafa" />
       </head>
       <body>
-        <nav>
-          <a href="/">Home</a>
-          ${data.user
-            ? `<a href="/logout">Logout</a>`
-            : `<a href="/login">Login</a>
-               <a href="/register">Register</a>`}
-        </nav>
+        ${nav({ user: data.user })}
         <main>${children(data)}</main>
+        <form action="https://duckduckgo.com">
+          <input type="text" name="q" placeholder="Search" />
+          <input type="hidden" name="sites" value="maw.sh" />
+          <button type="submit">Search</button>
+        </form>
+        <script src="/vendor/alpine.min.js"></script>
+        <script src="/vendor/htmx.min.js"></script>
         <script src="/app.js"></script>
       </body>
     </html>`;
 
 export const home = ({ user }: { user: Props["user"] }) =>
   html`<h1>Welcome Home</h1>
+    <div x-data="{counter: 0}">
+      <button @click="counter++" x-text="counter"></button>
+    </div>
     ${user ? `<p>Hello, ${user.username}!</p>` : `<p>Please log in or register.</p>`}`;
 
 export const login = ({
